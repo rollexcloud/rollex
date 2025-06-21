@@ -1,4 +1,5 @@
-Flask>=2.3.0
-yt-dlp
-Jinja2>=3.1.0
-yt-dlp-get-pot
+Flask==3.0.3
+Jinja2==3.1.4
+yt-dlp==2024.05.27
+yt-dlp-get-pot==0.6.1
+gunicorn==22.0.0
