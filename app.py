@@ -4,6 +4,7 @@ import yt_dlp
 import tempfile
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'change-this-secret')
 
 
 @app.route('/', methods=['GET'])
