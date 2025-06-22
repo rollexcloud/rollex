@@ -50,7 +50,12 @@ def admin_upload_cookies():
 @app.route('/get_formats', methods=['POST'])
 def get_formats():
     url = request.form.get('url')
-    ydl_opts = {'quiet': True, 'skip_download': True, 'extract_flat': False}
+    ydl_opts = {
+        'quiet': True,
+        'skip_download': True,
+        'extract_flat': False,
+        'S': 'vcodec:h264,res:720,acodec:aac',
+    }
     import os
     if os.path.exists('cookies.txt'):
         ydl_opts['cookiefile'] = 'cookies.txt'
@@ -76,10 +81,10 @@ def download():
     format_id = request.form.get('format_id')
     temp_dir = tempfile.mkdtemp()
     ydl_opts = {
-        'format': format_id,
         'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
         'quiet': True,
         'noplaylist': True,
+        'S': 'vcodec:h264,res:720,acodec:aac',
     }
     import os
     if os.path.exists('cookies.txt'):
