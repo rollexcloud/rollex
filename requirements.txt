@@ -1,5 +1,6 @@
 Flask==3.0.3
 Jinja2==3.1.4
-yt-dlp==2024.05.27
-yt-dlp-get-pot==0.3.0
+yt-dlp
+# Latest yt-dlp-get-pot from GitHub
+git+https://github.com/kaedea/yt-dlp-get-pot.git
 gunicorn==22.0.0
