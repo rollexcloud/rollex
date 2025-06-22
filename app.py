@@ -93,6 +93,7 @@ def get_formats():
 
 @app.route('/download', methods=['POST'])
 def download():
+    import os
     url = request.form.get('url')
     format_id = request.form.get('format_id')
     temp_dir = tempfile.mkdtemp()
@@ -102,7 +103,6 @@ def download():
         'noplaylist': True,
         'S': 'vcodec:h264,res:720,acodec:aac',
     }
-    import os
     if os.path.exists('cookies.txt'):
         ydl_opts['cookiefile'] = 'cookies.txt'
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
