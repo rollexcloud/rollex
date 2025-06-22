@@ -49,18 +49,6 @@
             const formData = new FormData(form);
             const params = new URLSearchParams();
             for (const pair of formData.entries()) {
-                params.append(pair[0], pair[1]);
-            }
-            window.location = '/download?' + params.toString();
-        };
-    };
-</script>
-    document.getElementById('urlForm').onsubmit = async function(e) {
-        e.preventDefault();
-        const url = document.getElementById('url').value;
-        const res = await fetch('/get_formats', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: new URLSearchParams({url})
         });
         const data = await res.json();
