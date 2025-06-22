@@ -95,7 +95,11 @@ async def get_youtube_streams(url, proxy=None):
             'audio_urls': [],
             'po_token': po_token,
         }
-        if player_json:
+        # --- DEBUG: Save HTML if extraction fails ---
+        extraction_failed = False
+        if not player_json:
+            extraction_failed = True
+        else:
             streaming_data = player_json.get('streamingData', {})
             for fmt in streaming_data.get('formats', []) + streaming_data.get('adaptiveFormats', []):
                 mime = fmt.get('mimeType', '')
@@ -108,6 +112,15 @@ async def get_youtube_streams(url, proxy=None):
                     result['video_urls'].append(url)
                 elif 'audio' in mime:
                     result['audio_urls'].append(url)
+            if not result['video_urls'] and not result['audio_urls']:
+                extraction_failed = True
+        if extraction_failed:
+            try:
+                with open('last_failed_youtube_page.html', 'w', encoding='utf-8') as f:
+                    f.write(html)
+                print('[youtube_playwright] Saved failed YouTube page HTML to last_failed_youtube_page.html')
+            except Exception as e:
+                print(f'[youtube_playwright] Could not save failed HTML: {e}')
         # Export cookies from Playwright session to cookies.txt for yt-dlp
         cookies = await page.context.cookies()
         try:
