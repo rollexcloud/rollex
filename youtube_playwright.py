@@ -1,7 +1,7 @@
 import asyncio
 from playwright.async_api import async_playwright
 
-async def get_youtube_streams(url):
+async def get_youtube_streams(url, proxy=None):
     '''
     Launch headless Chromium, visit YouTube video URL, extract stream URLs.
     Returns: dict with 'video_urls', 'audio_urls', 'title', 'page_html'
@@ -12,7 +12,10 @@ async def get_youtube_streams(url):
     cookies_path = 'cookies.txt'
     async with async_playwright() as p:
         # Use persistent context for session/cookies
-        browser = await p.chromium.launch_persistent_context(user_data_dir, headless=True)
+        launch_args = dict(user_data_dir=user_data_dir, headless=True)
+        if proxy:
+            launch_args["proxy"] = {"server": proxy}
+        browser = await p.chromium.launch_persistent_context(**launch_args)
         page = await browser.new_page()
         # Load cookies.txt if present
         if os.path.exists(cookies_path):
@@ -129,8 +132,14 @@ async def get_youtube_streams(url):
         return result
 
 if __name__ == '__main__':
-    import sys
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('url')
+    parser.add_argument('--proxy', default=None)
+    args = parser.parse_args()
+    url = args.url
+    proxy = args.proxy
+    import asyncio
+    result = asyncio.run(get_youtube_streams(url, proxy=proxy))
     import json
-    url = sys.argv[1]
-    data = asyncio.run(get_youtube_streams(url))
-    print(json.dumps(data))
+    print(json.dumps(result, ensure_ascii=False))
