@@ -62,6 +62,11 @@ def get_formats():
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
+            print("[yt-dlp] Full info dict:")
+            print(info)
+            print("[yt-dlp] All formats:")
+            for f in info.get('formats', []):
+                print(f)
             formats = [
                 {
                     'format_id': f['format_id'],
@@ -73,6 +78,7 @@ def get_formats():
             ]
             return jsonify({'title': info.get('title', ''), 'formats': formats})
         except Exception as e:
+            print(f"[yt-dlp ERROR] {e}")
             return jsonify({'error': str(e)}), 400
 
 @app.route('/download', methods=['POST'])
