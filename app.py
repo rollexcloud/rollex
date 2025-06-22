@@ -28,6 +28,10 @@ def admin_required(f):
         return abort(403)
     return decorated_function
 
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
