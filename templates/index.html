@@ -14,16 +14,14 @@
 <body>
 <div class="container">
     <h2 class="mb-4">YouTube Downloader</h2>
-    <form id="urlForm">
+    <form action="/download" method="post">
         <div class="mb-3">
             <label for="url" class="form-label">YouTube URL</label>
             <input type="url" class="form-control" id="url" name="url" required>
         </div>
-        <button type="submit" class="btn btn-primary">Get Formats</button>
+        <button type="submit" class="btn btn-primary">Download Best Quality</button>
     </form>
-    <div id="formatsContainer" class="formats-table"></div>
 </div>
-<script>
     document.getElementById('urlForm').onsubmit = async function(e) {
         e.preventDefault();
         const url = document.getElementById('url').value;
