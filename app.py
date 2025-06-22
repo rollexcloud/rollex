@@ -91,6 +91,12 @@ def get_formats():
     }
     if os.path.exists('cookies.txt'):
         ydl_opts['cookiefile'] = 'cookies.txt'
+    # If Playwright returned a PO Token, pass it to yt-dlp
+    extractor_args = {}
+    if pw_result and pw_result.get('po_token'):
+        extractor_args['youtube'] = {'po_token': f"mweb.gvs+{pw_result['po_token']}"}
+    if extractor_args:
+        ydl_opts['extractor_args'] = extractor_args
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)

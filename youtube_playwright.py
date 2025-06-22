@@ -49,6 +49,30 @@ async def get_youtube_streams(url):
             pass
         title = await page.title()
         html = await page.content()
+
+        # --- Extract PO Token from googlevideo.com requests ---
+        po_token = None
+        def handle_request(request):
+            nonlocal po_token
+            if 'googlevideo.com' in request.url and 'pot=' in request.url:
+                from urllib.parse import parse_qs, urlparse
+                qs = parse_qs(urlparse(request.url).query)
+                pot = qs.get('pot')
+                if pot:
+                    po_token = pot[0]
+        page.on('request', handle_request)
+        # Play video for a few seconds to trigger googlevideo.com requests
+        try:
+            await page.evaluate('''() => {
+                const v = document.querySelector('video');
+                if (v) { v.play(); }
+            }''')
+            await page.wait_for_timeout(5000)
+        except Exception:
+            pass
+        # Remove listener
+        page.off('request', handle_request)
+
         # Extract ytInitialPlayerResponse JSON (contains streaming info)
         player_json = None
         for script in await page.query_selector_all('script'):
@@ -62,7 +86,12 @@ async def get_youtube_streams(url):
                         break
                     except Exception:
                         pass
-        result = {'title': title, 'video_urls': [], 'audio_urls': []}
+        result = {
+            'title': title,
+            'video_urls': [],
+            'audio_urls': [],
+            'po_token': po_token,
+        }
         if player_json:
             streaming_data = player_json.get('streamingData', {})
             for fmt in streaming_data.get('formats', []) + streaming_data.get('adaptiveFormats', []):
