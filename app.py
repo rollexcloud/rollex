@@ -112,7 +112,9 @@ import redis
 import ffmpeg
 
 # Connect to Redis (external if env vars set, else local, with optional auth)
-REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+REDIS_HOST = os.environ.get('REDIS_HOST')
+if not REDIS_HOST or not REDIS_HOST.strip():
+    REDIS_HOST = 'localhost'
 def get_int_env(varname, default):
     try:
         value = os.environ.get(varname, str(default))
