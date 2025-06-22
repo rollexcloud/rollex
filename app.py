@@ -1,7 +1,9 @@
 import os
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 import yt_dlp
+import ffmpeg
+import redis
 import tempfile
 
 # Load .env file
@@ -10,10 +12,6 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'change-this-secret')
 
-
-@app.route('/', methods=['GET'])
-def index():
-    return render_template('index.html')
 
 import os
 from functools import wraps
