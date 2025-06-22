@@ -57,11 +57,9 @@ def admin_upload_cookies():
 def get_formats():
     url = request.form.get('url')
     from playwright_bridge import get_streams_with_playwright
-    import os
-    # 1. Try Playwright first
-    pw_result = get_streams_with_playwright(url)
+    proxy = get_random_proxy()
+    pw_result = get_streams_with_playwright(url, proxy=proxy) if proxy else get_streams_with_playwright(url)
     if pw_result and not pw_result.get('error') and (pw_result.get('video_urls') or pw_result.get('audio_urls')):
-        # Return Playwright streams as pseudo-formats
         formats = []
         for i, vurl in enumerate(pw_result.get('video_urls', [])):
             formats.append({
@@ -82,7 +80,6 @@ def get_formats():
                 'direct_url': aurl
             })
         return jsonify({'title': pw_result.get('title', ''), 'formats': formats})
-    # 2. Fallback to yt-dlp as before
     ydl_opts = {
         'quiet': True,
         'skip_download': True,
@@ -97,15 +94,15 @@ def get_formats():
         ydl_opts['cookiefile'] = 'cookies.txt'
     else:
         print('DEBUG: cookies.txt does NOT exist, yt-dlp will not use cookies')
-    # If Playwright returned a PO Token, pass it to yt-dlp
     extractor_args = {}
     if pw_result and pw_result.get('po_token'):
         extractor_args['youtube'] = {'po_token': f"mweb.gvs+{pw_result['po_token']}"}
     if extractor_args:
         ydl_opts['extractor_args'] = extractor_args
-    # Set user-agent to match Playwright's browser
     if pw_result and pw_result.get('user_agent'):
         ydl_opts['user_agent'] = pw_result['user_agent']
+    if proxy:
+        ydl_opts['proxy'] = proxy
     print('DEBUG: yt-dlp options for info extraction:', ydl_opts)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -173,6 +170,7 @@ def download():
     url = request.form.get('url')
     format_id = request.form.get('format_id')
     direct_url = request.form.get('direct_url')
+    proxy = get_random_proxy()
     temp_dir = tempfile.mkdtemp()
     cache_key = f"merged:{url}:{format_id}:{direct_url}"
     cached = redis_client.get(cache_key)
@@ -181,11 +179,9 @@ def download():
         with open(merged_path, 'wb') as f:
             f.write(cached)
         return send_file(merged_path, as_attachment=True)
-    # If direct_url is present (Playwright), download it directly
     if direct_url:
         import requests
         local_file = os.path.join(temp_dir, 'downloaded.mp4')
-        # Playwright cookie support
         cookies = None
         if os.path.exists('cookies.txt'):
             with open('cookies.txt', 'r', encoding='utf-8') as f:
@@ -193,7 +189,10 @@ def download():
         headers = {}
         if cookies:
             headers['Cookie'] = cookies
-        with requests.get(direct_url, headers=headers, stream=True) as r:
+        proxies = None
+        if proxy:
+            proxies = {"http": proxy, "https": proxy}
+        with requests.get(direct_url, headers=headers, stream=True, proxies=proxies) as r:
             r.raise_for_status()
             with open(local_file, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
@@ -201,7 +200,6 @@ def download():
         with open(local_file, 'rb') as f:
             redis_client.setex(cache_key, 86400, f.read())
         return send_file(local_file, as_attachment=True)
-    # Fallback: yt-dlp logic as before
     ydl_base_opts = {
         'outtmpl': os.path.join(temp_dir, '%(id)s.%(ext)s'),
         'quiet': True,
@@ -237,6 +235,8 @@ def download():
                 audio_format = best_audio['format_id']
             ydl_opts = ydl_base_opts.copy()
             ydl_opts['format'] = f"{video_format}+{audio_format}" if audio_format else video_format
+            if proxy:
+                ydl_opts['proxy'] = proxy
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 video_file = None
@@ -262,6 +262,8 @@ def download():
                     return jsonify({'error': 'Failed to download or merge video/audio.'}), 500
         ydl_opts = ydl_base_opts.copy()
         ydl_opts['format'] = format_id
+        if proxy:
+            ydl_opts['proxy'] = proxy
         print('DEBUG: yt-dlp options for download:', ydl_opts)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
