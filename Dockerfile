@@ -6,8 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
+RUN apt-get update && apt-get install -y ffmpeg git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
