@@ -6,10 +6,38 @@ async def get_youtube_streams(url):
     Launch headless Chromium, visit YouTube video URL, extract stream URLs.
     Returns: dict with 'video_urls', 'audio_urls', 'title', 'page_html'
     '''
+    import os
+    from pathlib import Path
+    user_data_dir = str(Path('pw_userdata').absolute())
+    cookies_path = 'cookies.txt'
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        page = await context.new_page()
+        # Use persistent context for session/cookies
+        browser = await p.chromium.launch_persistent_context(user_data_dir, headless=True)
+        page = await browser.new_page()
+        # Load cookies.txt if present
+        if os.path.exists(cookies_path):
+            import json
+            import http.cookiejar
+            import browser_cookie3
+            # Try to parse cookies.txt (Netscape format)
+            cookies = []
+            try:
+                cj = http.cookiejar.MozillaCookieJar()
+                cj.load(cookies_path)
+                for c in cj:
+                    cookies.append({
+                        'name': c.name,
+                        'value': c.value,
+                        'domain': c.domain,
+                        'path': c.path,
+                        'expires': c.expires,
+                        'httpOnly': c._rest.get('HttpOnly') or False,
+                        'secure': c.secure,
+                        'sameSite': 'Lax',
+                    })
+                await page.context.add_cookies(cookies)
+            except Exception:
+                pass
         await page.goto(url, wait_until='networkidle')
         # Accept consent if present
         try:
