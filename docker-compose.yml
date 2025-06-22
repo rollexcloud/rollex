@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    command: ["redis-server", "--maxmemory", "1024mb", "--maxmemory-policy", "allkeys-lru"]
 
   yt-downloader:
     build: .
