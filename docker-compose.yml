@@ -1,5 +1,13 @@
 version: '3.8'
 services:
+  redis:
+    image: redis:7
+    container_name: redis-prod
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+
   yt-downloader:
     build: .
     container_name: yt-downloader
@@ -8,3 +16,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
+    depends_on:
+      - redis
+    env_file:
+      - .env
