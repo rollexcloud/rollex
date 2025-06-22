@@ -5,6 +5,10 @@ import yt_dlp
 import ffmpeg
 import redis
 import tempfile
+from proxy_utils import get_random_proxy
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 # Load .env file
 load_dotenv()
@@ -58,6 +62,7 @@ def get_formats():
     url = request.form.get('url')
     from playwright_bridge import get_streams_with_playwright
     proxy = get_random_proxy()
+    logging.info(f"[get_formats] Using proxy: {proxy}")
     pw_result = get_streams_with_playwright(url, proxy=proxy) if proxy else get_streams_with_playwright(url)
     if pw_result and not pw_result.get('error') and (pw_result.get('video_urls') or pw_result.get('audio_urls')):
         formats = []
@@ -102,6 +107,7 @@ def get_formats():
     if pw_result and pw_result.get('user_agent'):
         ydl_opts['user_agent'] = pw_result['user_agent']
     if proxy:
+        logging.info(f"[get_formats] Using proxy for yt-dlp: {proxy}")
         ydl_opts['proxy'] = proxy
     print('DEBUG: yt-dlp options for info extraction:', ydl_opts)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -171,6 +177,7 @@ def download():
     format_id = request.form.get('format_id')
     direct_url = request.form.get('direct_url')
     proxy = get_random_proxy()
+    logging.info(f"[download] Using proxy: {proxy}")
     temp_dir = tempfile.mkdtemp()
     cache_key = f"merged:{url}:{format_id}:{direct_url}"
     cached = redis_client.get(cache_key)
