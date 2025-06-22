@@ -56,26 +56,46 @@ def admin_upload_cookies():
 @app.route('/get_formats', methods=['POST'])
 def get_formats():
     url = request.form.get('url')
+    from playwright_bridge import get_streams_with_playwright
+    import os
+    # 1. Try Playwright first
+    pw_result = get_streams_with_playwright(url)
+    if pw_result and not pw_result.get('error') and (pw_result.get('video_urls') or pw_result.get('audio_urls')):
+        # Return Playwright streams as pseudo-formats
+        formats = []
+        for i, vurl in enumerate(pw_result.get('video_urls', [])):
+            formats.append({
+                'format_id': f'pwvideo{i}',
+                'ext': 'mp4',
+                'format_note': 'Playwright Video',
+                'resolution': '',
+                'filesize': 0,
+                'direct_url': vurl
+            })
+        for i, aurl in enumerate(pw_result.get('audio_urls', [])):
+            formats.append({
+                'format_id': f'pwaudio{i}',
+                'ext': 'm4a',
+                'format_note': 'Playwright Audio',
+                'resolution': '',
+                'filesize': 0,
+                'direct_url': aurl
+            })
+        return jsonify({'title': pw_result.get('title', ''), 'formats': formats})
+    # 2. Fallback to yt-dlp as before
     ydl_opts = {
         'quiet': True,
         'skip_download': True,
         'extract_flat': False,
         'S': 'vcodec:h264,res:720,acodec:aac',
     }
-    import os
     if os.path.exists('cookies.txt'):
         ydl_opts['cookiefile'] = 'cookies.txt'
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
-            print("[yt-dlp] Full info dict:")
-            print(info)
-            print("[yt-dlp] All formats:")
-            for f in info.get('formats', []):
-                print(f)
             allowed_heights = [2160, 1440, 1080, 720, 480, 360]
             allowed_resolutions = [f"{h}p" for h in allowed_heights]
-            # Video formats with allowed resolutions or heights
             video_formats = [
                 {
                     'format_id': f['format_id'],
@@ -90,7 +110,6 @@ def get_formats():
                     (f.get('resolution', '') in allowed_resolutions)
                 )
             ]
-            # Audio-only formats
             audio_formats = [
                 {
                     'format_id': f['format_id'],
@@ -105,8 +124,7 @@ def get_formats():
             formats = video_formats + audio_formats
             return jsonify({'title': info.get('title', ''), 'formats': formats})
         except Exception as e:
-            print(f"[yt-dlp ERROR] {e}")
-            return jsonify({'error': str(e)}), 400
+            return jsonify({'error': f'Both Playwright and yt-dlp failed: {e}'}), 400
 
 import redis
 import ffmpeg
@@ -138,17 +156,36 @@ def download():
     import os
     url = request.form.get('url')
     format_id = request.form.get('format_id')
+    direct_url = request.form.get('direct_url')
     temp_dir = tempfile.mkdtemp()
-    cache_key = f"merged:{url}:{format_id}"
+    cache_key = f"merged:{url}:{format_id}:{direct_url}"
     cached = redis_client.get(cache_key)
     if cached:
-        # Serve cached merged file from Redis
         merged_path = os.path.join(temp_dir, 'merged.mp4')
         with open(merged_path, 'wb') as f:
             f.write(cached)
         return send_file(merged_path, as_attachment=True)
-    # Download video/audio separately if needed
-    # Determine if the selected format is video-only
+    # If direct_url is present (Playwright), download it directly
+    if direct_url:
+        import requests
+        local_file = os.path.join(temp_dir, 'downloaded.mp4')
+        # Playwright cookie support
+        cookies = None
+        if os.path.exists('cookies.txt'):
+            with open('cookies.txt', 'r', encoding='utf-8') as f:
+                cookies = f.read()
+        headers = {}
+        if cookies:
+            headers['Cookie'] = cookies
+        with requests.get(direct_url, headers=headers, stream=True) as r:
+            r.raise_for_status()
+            with open(local_file, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        with open(local_file, 'rb') as f:
+            redis_client.setex(cache_key, 86400, f.read())
+        return send_file(local_file, as_attachment=True)
+    # Fallback: yt-dlp logic as before
     ydl_base_opts = {
         'outtmpl': os.path.join(temp_dir, '%(id)s.%(ext)s'),
         'quiet': True,
@@ -158,7 +195,6 @@ def download():
     if os.path.exists('cookies.txt'):
         ydl_base_opts['cookiefile'] = 'cookies.txt'
     try:
-        # First, get info about the selected format
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info_dict = ydl.extract_info(url, download=False)
         selected_format = None
@@ -166,12 +202,9 @@ def download():
             if str(fmt.get('format_id')) == str(format_id):
                 selected_format = fmt
                 break
-        # Check if video-only
         is_video_only = selected_format and selected_format.get('vcodec') != 'none' and selected_format.get('acodec') == 'none'
         if is_video_only:
-            # Download video and best audio, then merge
             video_format = format_id
-            # Find best audio-only format
             audio_format = None
             best_audio = None
             for fmt in info_dict.get('formats', []):
@@ -180,7 +213,6 @@ def download():
                         best_audio = fmt
             if best_audio:
                 audio_format = best_audio['format_id']
-            # Download both
             ydl_opts = ydl_base_opts.copy()
             ydl_opts['format'] = f"{video_format}+{audio_format}" if audio_format else video_format
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -190,7 +222,7 @@ def download():
                 for entry in info.get('requested_downloads', []):
                     if entry.get('vcodec') != 'none' and entry.get('acodec') == 'none':
                         video_file = entry['filepath']
-                    if entry.get('acodec') != 'none' and entry.get('vcodec') == 'none':
+                    elif entry.get('acodec') != 'none' and entry.get('vcodec') == 'none':
                         audio_file = entry['filepath']
                 merged_file = os.path.join(temp_dir, 'merged.mp4')
                 if video_file and audio_file:
@@ -201,24 +233,47 @@ def download():
                         .output(merged_file, vcodec='copy', acodec='copy', strict='experimental')
                         .run(overwrite_output=True)
                     )
+                    with open(merged_file, 'rb') as f:
+                        redis_client.setex(cache_key, 86400, f.read())
+                    return send_file(merged_file, as_attachment=True)
                 else:
-                    # Fallback: serve video_file if no audio found
-                    merged_file = video_file
-        else:
-            # Not video-only: download as requested
-            ydl_opts = ydl_base_opts.copy()
-            ydl_opts['format'] = format_id
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-                merged_file = filename
-        # Cache merged file in Redis
-        with open(merged_file, 'rb') as f:
-            redis_client.set(cache_key, f.read(), ex=24*3600)  # Cache for 24h
-        return send_file(merged_file, as_attachment=True)
+                    return jsonify({'error': 'Failed to download or merge video/audio.'}), 500
+        ydl_opts = ydl_base_opts.copy()
+        ydl_opts['format'] = format_id
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            out_file = info['requested_downloads'][0]['filepath']
+            with open(out_file, 'rb') as f:
+                redis_client.setex(cache_key, 86400, f.read())
+            return send_file(out_file, as_attachment=True)
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e)}), 500
 
+
+import subprocess
+import json
+
+@app.route('/api/get_streams', methods=['POST'])
+def api_get_streams():
+    url = request.form.get('url') or request.json.get('url')
+    if not url:
+        return jsonify({'error': 'Missing url'}), 400
+    try:
+        result = subprocess.run([
+            'python', 'playwright_bridge.py', url
+        ], capture_output=True, text=True, timeout=90)
+        if result.returncode != 0:
+            return jsonify({'error': result.stderr.strip() or 'Playwright script error'}), 500
+        # Try to parse JSON from output
+        try:
+            data = json.loads(result.stdout.replace("'", '"'))  # crude fix for single quotes
+            return jsonify(data)
+        except Exception:
+            return jsonify({'error': 'Could not parse Playwright output', 'raw': result.stdout}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Playwright script timed out'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

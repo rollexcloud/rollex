@@ -20,6 +20,7 @@
             <input type="url" class="form-control" id="url" name="url" required>
         </div>
         <button type="submit" class="btn btn-primary">Get Formats</button>
+        <button type="button" id="playwrightBtn" class="btn btn-secondary ms-2">Try Playwright Extraction</button>
     </form>
     <div id="formatsContainer" class="formats-table"></div>
 
@@ -51,6 +52,37 @@
   </div>
 </div>
 <script>
+    document.getElementById('playwrightBtn').onclick = async function() {
+        const url = document.getElementById('url').value;
+        if (!url) return alert('Enter a YouTube URL');
+        document.getElementById('formatsContainer').innerHTML = '<div class="alert alert-info">Extracting with Playwright...</div>';
+        const res = await fetch('/api/get_streams', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({url})
+        });
+        const data = await res.json();
+        const container = document.getElementById('formatsContainer');
+        if (data.error) {
+            container.innerHTML = `<div class='alert alert-danger'>${data.error}</div>`;
+            return;
+        }
+        let html = `<h4>${data.title || 'Result'}</h4>`;
+        if (data.video_urls && data.video_urls.length) {
+            html += '<b>Video URLs:</b><ul>';
+            for (const v of data.video_urls) html += `<li><a href='${v}' target='_blank'>${v.substring(0,80)}...</a></li>`;
+            html += '</ul>';
+        }
+        if (data.audio_urls && data.audio_urls.length) {
+            html += '<b>Audio URLs:</b><ul>';
+            for (const a of data.audio_urls) html += `<li><a href='${a}' target='_blank'>${a.substring(0,80)}...</a></li>`;
+            html += '</ul>';
+        }
+        if (!data.video_urls?.length && !data.audio_urls?.length) {
+            html += '<div>No direct streams found. Try with cookies or another method.</div>';
+        }
+        container.innerHTML = html;
+    };
     document.getElementById('urlForm').onsubmit = async function(e) {
         e.preventDefault();
         const url = document.getElementById('url').value;
@@ -78,7 +110,7 @@
                     html += `<tr><td colspan='5' style='background:#e9ecef;font-weight:bold;'>Video</td></tr>`;
                     foundVideo = true;
                 }
-                html += `<tr><td>${f.format_note}</td><td>${f.ext}</td><td>${f.resolution}</td><td>${(f.filesize/1048576).toFixed(2)} MB</td><td><form method='POST' action='/download' style='display:inline;' class='download-form'><input type='hidden' name='url' value='${url}'><input type='hidden' name='format_id' value='${f.format_id}'><button class='btn btn-success btn-sm'>Download</button></form></td></tr>`;
+                html += `<tr><td>${f.format_note}</td><td>${f.ext}</td><td>${f.resolution}</td><td>${(f.filesize/1048576).toFixed(2)} MB</td><td><form method='POST' action='/download' style='display:inline;' class='download-form'><input type='hidden' name='url' value='${url}'><input type='hidden' name='format_id' value='${f.format_id}'>${f.direct_url ? `<input type='hidden' name='direct_url' value='${f.direct_url}'>` : ''}<button class='btn btn-success btn-sm'>Download</button></form></td></tr>`;
             }
         }
         // Audio section
@@ -88,7 +120,7 @@
                     html += `<tr><td colspan='5' style='background:#e9ecef;font-weight:bold;'>Audio</td></tr>`;
                     foundAudio = true;
                 }
-                html += `<tr><td>${f.format_note}</td><td>${f.ext}</td><td>-</td><td>${(f.filesize/1048576).toFixed(2)} MB</td><td><form method='POST' action='/download' style='display:inline;' class='download-form'><input type='hidden' name='url' value='${url}'><input type='hidden' name='format_id' value='${f.format_id}'><button class='btn btn-info btn-sm'>Download</button></form></td></tr>`;
+                html += `<tr><td>${f.format_note}</td><td>${f.ext}</td><td>-</td><td>${(f.filesize/1048576).toFixed(2)} MB</td><td><form method='POST' action='/download' style='display:inline;' class='download-form'><input type='hidden' name='url' value='${url}'><input type='hidden' name='format_id' value='${f.format_id}'>${f.direct_url ? `<input type='hidden' name='direct_url' value='${f.direct_url}'>` : ''}<button class='btn btn-info btn-sm'>Download</button></form></td></tr>`;
             }
         }
         html += `</tbody></table>`;
