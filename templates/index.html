@@ -14,14 +14,47 @@
 <body>
 <div class="container">
     <h2 class="mb-4">YouTube Downloader</h2>
-    <form action="/download" method="post">
+    <form id="urlForm">
         <div class="mb-3">
             <label for="url" class="form-label">YouTube URL</label>
             <input type="url" class="form-control" id="url" name="url" required>
         </div>
-        <button type="submit" class="btn btn-primary">Download Best Quality</button>
+        <button type="submit" class="btn btn-primary">Get Formats</button>
     </form>
+    <div id="formatsContainer" class="formats-table"></div>
 </div>
+<script>
+    document.getElementById('urlForm').onsubmit = async function(e) {
+        e.preventDefault();
+        const url = document.getElementById('url').value;
+        const res = await fetch('/get_formats', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'url=' + encodeURIComponent(url)
+        });
+        const data = await res.json();
+        if (data.error) {
+            document.getElementById('formatsContainer').innerHTML = '<div class="alert alert-danger">' + data.error + '</div>';
+            return;
+        }
+        let html = '<form id="downloadForm"><div class="mb-3"><label for="format_id" class="form-label">Select Format</label><select class="form-select" id="format_id" name="format_id">';
+        for (const f of data.formats) {
+            html += `<option value="${f.format_id}">${f.ext} ${f.format_note} ${f.resolution} (${(f.filesize/1048576).toFixed(2)} MB)</option>`;
+        }
+        html += '</select></div><input type="hidden" name="url" value="' + url + '"><button type="submit" class="btn btn-success">Download</button></form>';
+        document.getElementById('formatsContainer').innerHTML = html;
+        document.getElementById('downloadForm').onsubmit = function(e) {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+            for (const pair of formData.entries()) {
+                params.append(pair[0], pair[1]);
+            }
+            window.location = '/download?' + params.toString();
+        };
+    };
+</script>
     document.getElementById('urlForm').onsubmit = async function(e) {
         e.preventDefault();
         const url = document.getElementById('url').value;

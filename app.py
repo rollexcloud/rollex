@@ -95,12 +95,13 @@ def get_formats():
 def download():
     import os
     url = request.form.get('url')
+    format_id = request.form.get('format_id')
     temp_dir = tempfile.mkdtemp()
     ydl_opts = {
         'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
         'quiet': True,
         'noplaylist': True,
-        # Let yt-dlp pick the best format automatically
+        'format': format_id
     }
     if os.path.exists('cookies.txt'):
         ydl_opts['cookiefile'] = 'cookies.txt'
