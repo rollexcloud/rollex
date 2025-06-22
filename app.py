@@ -74,8 +74,18 @@ def get_formats():
                     'format_note': f.get('format_note', ''),
                     'resolution': f.get('resolution', ''),
                     'filesize': f.get('filesize', 0)
-                } for f in info.get('formats', []) if f.get('filesize')
-            ]
+                } for f in info.get('formats', []) if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
+            if not formats:
+                # fallback: show all formats (even audio/video only)
+                formats = [
+                    {
+                        'format_id': f['format_id'],
+                        'ext': f['ext'],
+                        'format_note': f.get('format_note', ''),
+                        'resolution': f.get('resolution', ''),
+                        'filesize': f.get('filesize', 0)
+                    } for f in info.get('formats', [])
+                ]
             return jsonify({'title': info.get('title', ''), 'formats': formats})
         except Exception as e:
             print(f"[yt-dlp ERROR] {e}")
@@ -102,6 +112,7 @@ def download():
             return send_file(filename, as_attachment=True)
         except Exception as e:
             return jsonify({'error': str(e)}), 400
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
