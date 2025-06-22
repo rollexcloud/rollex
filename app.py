@@ -1,7 +1,11 @@
 import os
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 import yt_dlp
 import tempfile
+
+# Load .env file
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'change-this-secret')
@@ -67,29 +71,56 @@ def get_formats():
             print("[yt-dlp] All formats:")
             for f in info.get('formats', []):
                 print(f)
-            formats = [
+            allowed_heights = [2160, 1440, 1080, 720, 480, 360]
+            allowed_resolutions = [f"{h}p" for h in allowed_heights]
+            # Video formats with allowed resolutions or heights
+            video_formats = [
                 {
                     'format_id': f['format_id'],
                     'ext': f['ext'],
                     'format_note': f.get('format_note', ''),
-                    'resolution': f.get('resolution', ''),
+                    'resolution': f.get('resolution', '') or (f"{f.get('height', '')}p" if f.get('height') else ''),
                     'filesize': f.get('filesize', 0)
-                } for f in info.get('formats', []) if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
-            if not formats:
-                # fallback: show all formats (even audio/video only)
-                formats = [
-                    {
-                        'format_id': f['format_id'],
-                        'ext': f['ext'],
-                        'format_note': f.get('format_note', ''),
-                        'resolution': f.get('resolution', ''),
-                        'filesize': f.get('filesize', 0)
-                    } for f in info.get('formats', [])
-                ]
+                }
+                for f in info.get('formats', [])
+                if f.get('vcodec') != 'none' and (
+                    (f.get('height') and f.get('height') in allowed_heights) or
+                    (f.get('resolution', '') in allowed_resolutions)
+                )
+            ]
+            # Audio-only formats
+            audio_formats = [
+                {
+                    'format_id': f['format_id'],
+                    'ext': f['ext'],
+                    'format_note': f.get('format_note', 'Audio only') or 'Audio only',
+                    'resolution': '',
+                    'filesize': f.get('filesize', 0)
+                }
+                for f in info.get('formats', [])
+                if f.get('acodec') != 'none' and f.get('vcodec') == 'none'
+            ]
+            formats = video_formats + audio_formats
             return jsonify({'title': info.get('title', ''), 'formats': formats})
         except Exception as e:
             print(f"[yt-dlp ERROR] {e}")
             return jsonify({'error': str(e)}), 400
+
+import redis
+import ffmpeg
+
+# Connect to Redis (external if env vars set, else local, with optional auth)
+REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
+REDIS_DB = int(os.environ.get('REDIS_DB', 0))
+REDIS_USERNAME = os.environ.get('REDIS_USERNAME')
+REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD')
+redis_kwargs = {'host': REDIS_HOST, 'port': REDIS_PORT, 'db': REDIS_DB}
+if REDIS_USERNAME:
+    redis_kwargs['username'] = REDIS_USERNAME
+if REDIS_PASSWORD:
+    redis_kwargs['password'] = REDIS_PASSWORD
+redis_client = redis.Redis(**redis_kwargs)
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -97,21 +128,55 @@ def download():
     url = request.form.get('url')
     format_id = request.form.get('format_id')
     temp_dir = tempfile.mkdtemp()
+    cache_key = f"merged:{url}:{format_id}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        # Serve cached merged file from Redis
+        merged_path = os.path.join(temp_dir, 'merged.mp4')
+        with open(merged_path, 'wb') as f:
+            f.write(cached)
+        return send_file(merged_path, as_attachment=True)
+    # Download video/audio separately if needed
     ydl_opts = {
-        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+        'outtmpl': os.path.join(temp_dir, '%(id)s.%(ext)s'),
         'quiet': True,
         'noplaylist': True,
-        'format': format_id
+        'format': format_id,
+        'merge_output_format': 'mp4',
     }
     if os.path.exists('cookies.txt'):
         ydl_opts['cookiefile'] = 'cookies.txt'
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
+            # Try to find merged file (yt-dlp may merge automatically)
             filename = ydl.prepare_filename(info)
-            return send_file(filename, as_attachment=True)
-        except Exception as e:
-            return jsonify({'error': str(e)}), 400
+            merged_file = filename
+            # If video-only or audio-only, or if format_id contains '+', merge manually
+            if '+' in format_id or (info.get('requested_downloads') and len(info['requested_downloads']) > 1):
+                # Find video and audio files
+                video_file = None
+                audio_file = None
+                for entry in info.get('requested_downloads', []):
+                    if entry.get('vcodec') != 'none' and entry.get('acodec') == 'none':
+                        video_file = entry['filepath']
+                    if entry.get('acodec') != 'none' and entry.get('vcodec') == 'none':
+                        audio_file = entry['filepath']
+                if video_file and audio_file:
+                    merged_file = os.path.join(temp_dir, 'merged.mp4')
+                    (
+                        ffmpeg
+                        .input(video_file)
+                        .input(audio_file)
+                        .output(merged_file, vcodec='copy', acodec='copy', strict='experimental')
+                        .run(overwrite_output=True)
+                    )
+            # Cache merged file in Redis
+            with open(merged_file, 'rb') as f:
+                redis_client.set(cache_key, f.read(), ex=24*3600)  # Cache for 24h
+            return send_file(merged_file, as_attachment=True)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 if __name__ == '__main__':
