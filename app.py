@@ -148,24 +148,43 @@ def download():
             f.write(cached)
         return send_file(merged_path, as_attachment=True)
     # Download video/audio separately if needed
-    ydl_opts = {
+    # Determine if the selected format is video-only
+    ydl_base_opts = {
         'outtmpl': os.path.join(temp_dir, '%(id)s.%(ext)s'),
         'quiet': True,
         'noplaylist': True,
-        'format': format_id,
         'merge_output_format': 'mp4',
     }
     if os.path.exists('cookies.txt'):
-        ydl_opts['cookiefile'] = 'cookies.txt'
+        ydl_base_opts['cookiefile'] = 'cookies.txt'
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            # Try to find merged file (yt-dlp may merge automatically)
-            filename = ydl.prepare_filename(info)
-            merged_file = filename
-            # If video-only or audio-only, or if format_id contains '+', merge manually
-            if '+' in format_id or (info.get('requested_downloads') and len(info['requested_downloads']) > 1):
-                # Find video and audio files
+        # First, get info about the selected format
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            info_dict = ydl.extract_info(url, download=False)
+        selected_format = None
+        for fmt in info_dict.get('formats', []):
+            if str(fmt.get('format_id')) == str(format_id):
+                selected_format = fmt
+                break
+        # Check if video-only
+        is_video_only = selected_format and selected_format.get('vcodec') != 'none' and selected_format.get('acodec') == 'none'
+        if is_video_only:
+            # Download video and best audio, then merge
+            video_format = format_id
+            # Find best audio-only format
+            audio_format = None
+            best_audio = None
+            for fmt in info_dict.get('formats', []):
+                if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none':
+                    if not best_audio or (fmt.get('abr', 0) > best_audio.get('abr', 0)):
+                        best_audio = fmt
+            if best_audio:
+                audio_format = best_audio['format_id']
+            # Download both
+            ydl_opts = ydl_base_opts.copy()
+            ydl_opts['format'] = f"{video_format}+{audio_format}" if audio_format else video_format
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
                 video_file = None
                 audio_file = None
                 for entry in info.get('requested_downloads', []):
@@ -173,8 +192,8 @@ def download():
                         video_file = entry['filepath']
                     if entry.get('acodec') != 'none' and entry.get('vcodec') == 'none':
                         audio_file = entry['filepath']
+                merged_file = os.path.join(temp_dir, 'merged.mp4')
                 if video_file and audio_file:
-                    merged_file = os.path.join(temp_dir, 'merged.mp4')
                     (
                         ffmpeg
                         .input(video_file)
@@ -182,10 +201,21 @@ def download():
                         .output(merged_file, vcodec='copy', acodec='copy', strict='experimental')
                         .run(overwrite_output=True)
                     )
-            # Cache merged file in Redis
-            with open(merged_file, 'rb') as f:
-                redis_client.set(cache_key, f.read(), ex=24*3600)  # Cache for 24h
-            return send_file(merged_file, as_attachment=True)
+                else:
+                    # Fallback: serve video_file if no audio found
+                    merged_file = video_file
+        else:
+            # Not video-only: download as requested
+            ydl_opts = ydl_base_opts.copy()
+            ydl_opts['format'] = format_id
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                merged_file = filename
+        # Cache merged file in Redis
+        with open(merged_file, 'rb') as f:
+            redis_client.set(cache_key, f.read(), ex=24*3600)  # Cache for 24h
+        return send_file(merged_file, as_attachment=True)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
