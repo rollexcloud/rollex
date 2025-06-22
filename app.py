@@ -97,6 +97,9 @@ def get_formats():
         extractor_args['youtube'] = {'po_token': f"mweb.gvs+{pw_result['po_token']}"}
     if extractor_args:
         ydl_opts['extractor_args'] = extractor_args
+    # Set user-agent to match Playwright's browser
+    if pw_result and pw_result.get('user_agent'):
+        ydl_opts['user_agent'] = pw_result['user_agent']
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)

@@ -105,6 +105,26 @@ async def get_youtube_streams(url):
                     result['video_urls'].append(url)
                 elif 'audio' in mime:
                     result['audio_urls'].append(url)
+        # Export cookies from Playwright session to cookies.txt for yt-dlp
+        cookies = await page.context.cookies()
+        try:
+            with open('cookies.txt', 'w', encoding='utf-8') as f:
+                f.write('# Netscape HTTP Cookie File
+')
+                for c in cookies:
+                    domain = c['domain']
+                    flag = 'TRUE' if domain.startswith('.') else 'FALSE'
+                    path = c['path']
+                    secure = 'TRUE' if c.get('secure') else 'FALSE'
+                    expiry = int(c.get('expires', 0))
+                    name = c['name']
+                    value = c['value']
+                    f.write(f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}\n")
+        except Exception as e:
+            result['cookie_export_error'] = str(e)
+        # Get user-agent
+        ua = await page.evaluate('navigator.userAgent')
+        result['user_agent'] = ua
         await browser.close()
         return result
 
