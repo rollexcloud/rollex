@@ -5,10 +5,13 @@ import yt_dlp
 import ffmpeg
 import redis
 import tempfile
-from proxy_utils import get_random_proxy
+from proxy_utils import get_random_proxy, get_valid_proxies
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+
+# Validate proxies once at startup
+get_valid_proxies()
 
 # Load .env file
 load_dotenv()

@@ -61,12 +61,14 @@ def clean_proxies(proxy_file='proxies.txt'):
 
 def get_valid_proxies(proxy_file='proxies.txt'):
     now = time.time()
+    # Only revalidate if cache is expired
     if now - _proxy_validation_cache['timestamp'] < PROXY_VALIDATION_CACHE_TTL:
-        return list(_proxy_validation_cache['valid_proxies'])
+        return _proxy_validation_cache['valid_proxies']
+    # Otherwise, validate and update cache
     valid = validate_proxies(proxy_file)
-    _proxy_validation_cache['timestamp'] = now
     _proxy_validation_cache['valid_proxies'] = valid
-    return list(valid)
+    _proxy_validation_cache['timestamp'] = now
+    return valid
 
 def get_random_proxy(proxy_file='proxies.txt'):
     valid = get_valid_proxies(proxy_file)
