@@ -90,7 +90,13 @@ def get_formats():
         'S': 'vcodec:h264,res:720,acodec:aac',
     }
     if os.path.exists('cookies.txt'):
+        if os.path.getsize('cookies.txt') == 0:
+            print('DEBUG: cookies.txt exists but is EMPTY')
+        else:
+            print('DEBUG: cookies.txt found and will be used by yt-dlp')
         ydl_opts['cookiefile'] = 'cookies.txt'
+    else:
+        print('DEBUG: cookies.txt does NOT exist, yt-dlp will not use cookies')
     # If Playwright returned a PO Token, pass it to yt-dlp
     extractor_args = {}
     if pw_result and pw_result.get('po_token'):
@@ -100,6 +106,7 @@ def get_formats():
     # Set user-agent to match Playwright's browser
     if pw_result and pw_result.get('user_agent'):
         ydl_opts['user_agent'] = pw_result['user_agent']
+    print('DEBUG: yt-dlp options for info extraction:', ydl_opts)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
@@ -202,7 +209,13 @@ def download():
         'merge_output_format': 'mp4',
     }
     if os.path.exists('cookies.txt'):
+        if os.path.getsize('cookies.txt') == 0:
+            print('DEBUG: cookies.txt exists but is EMPTY')
+        else:
+            print('DEBUG: cookies.txt found and will be used by yt-dlp')
         ydl_base_opts['cookiefile'] = 'cookies.txt'
+    else:
+        print('DEBUG: cookies.txt does NOT exist, yt-dlp will not use cookies')
     try:
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info_dict = ydl.extract_info(url, download=False)
@@ -249,6 +262,7 @@ def download():
                     return jsonify({'error': 'Failed to download or merge video/audio.'}), 500
         ydl_opts = ydl_base_opts.copy()
         ydl_opts['format'] = format_id
+        print('DEBUG: yt-dlp options for download:', ydl_opts)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             out_file = info['requested_downloads'][0]['filepath']
